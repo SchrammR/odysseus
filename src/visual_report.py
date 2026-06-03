@@ -1148,6 +1148,14 @@ body.category-landscape {
   --aurora-b: rgba(184,84,58,0.06);
   --aurora-c: rgba(122,76,184,0.05);
 }
+body.category-scientific {
+  --accent: #3f8f8a;
+  --accent-light: #62b7b1;
+  --accent-bg: rgba(63,143,138,0.08);
+  --aurora-a: rgba(63,143,138,0.12);
+  --aurora-b: rgba(64,98,128,0.07);
+  --aurora-c: rgba(122,76,184,0.05);
+}
 @media (prefers-color-scheme: dark) {
   body.category-product {
     --accent: #5cc8cb; --accent-light: #8fdde0;
@@ -1175,6 +1183,13 @@ body.category-landscape {
     --accent-bg: rgba(230,192,105,0.10);
     --aurora-a: rgba(230,192,105,0.15);
     --aurora-b: rgba(232,143,115,0.07);
+    --aurora-c: rgba(184,150,232,0.06);
+  }
+  body.category-scientific {
+    --accent: #71d0ca; --accent-light: #9ae3df;
+    --accent-bg: rgba(113,208,202,0.10);
+    --aurora-a: rgba(113,208,202,0.14);
+    --aurora-b: rgba(125,180,224,0.08);
     --aurora-c: rgba(184,150,232,0.06);
   }
 }
@@ -1614,6 +1629,32 @@ body.category-product .content h3 + table {
 .category-factcheck .content strong:only-child {
   display:inline-block; padding:4px 12px; border-radius:4px;
   font-size:1.1em;
+}
+""",
+        "scientific": """
+/* Scientific category */
+.category-scientific .content table {
+  width:100%; border-collapse:collapse; margin:1.2em 0; font-size:0.9em;
+  border:1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
+}
+.category-scientific .content table th {
+  background:var(--accent-bg); color:var(--accent); padding:8px 12px;
+  text-align:left; border-bottom:2px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+.category-scientific .content table td {
+  padding:8px 12px; border-bottom:1px solid var(--border); vertical-align:top;
+}
+.category-scientific .content table tr:nth-child(even) td {
+  background:color-mix(in srgb, var(--accent) 4%, transparent);
+}
+.category-scientific .content blockquote {
+  border-left:3px solid var(--accent);
+  background:var(--accent-bg);
+  padding:12px 16px;
+  border-radius:0 6px 6px 0;
+}
+.category-scientific .content h2:first-of-type {
+  border-bottom:2px solid color-mix(in srgb, var(--accent) 30%, var(--border));
 }
 """,
     }

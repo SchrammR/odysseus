@@ -758,6 +758,7 @@ class ResearchHandler:
             if _task_entry is not None:
                 _task_entry["raw_report"] = strip_thinking(report)
                 _task_entry["stats"] = stats
+                _task_entry["category"] = researcher.category
 
             return self._format_research_report(query, report, stats, elapsed)
 

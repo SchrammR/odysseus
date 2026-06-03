@@ -172,6 +172,28 @@ CATEGORY_PROMPTS = {
 - Include a ## Verdict section with one of: **Supported**, **Mixed Evidence**, or **Unsupported**
 - End with ## Nuance & Caveats for important context and limitations
 - Be balanced and cite sources for every claim""",
+
+    "scientific": """IMPORTANT FORMAT OVERRIDE — this is a SCIENTIFIC research report:
+- Prioritize peer-reviewed literature, systematic reviews, meta-analyses, conference proceedings, standards, and reputable preprints. Treat Medium posts, blogs, vendor pages, and news articles as contextual only.
+- Start with ## Abstract — a concise technical summary of the current evidence.
+- Include ## Research Question and Scope describing what was included/excluded.
+- Include ## Evidence Base with a markdown table: Source, Venue/Database, Evidence Type (systematic review, meta-analysis, RCT, cohort, conference paper, preprint, technical report, commentary), Year, Key Finding, Limitations.
+- Include ## State of the Evidence explaining consensus, disagreement, and confidence.
+- Include ## Methods and Study Quality covering sample sizes, datasets, methods, controls/baselines, metrics, reproducibility, conflicts of interest, and peer-review/preprint status where available.
+- Include ## Mechanisms or Technical Explanation when relevant.
+- Include ## Limitations and Open Questions.
+- Include ## Practical Implications without overstating causality.
+- Include ## References, preserving URLs/DOIs and clearly labeling arXiv/preprint items separately from peer-reviewed sources.
+- Do not present non-peer-reviewed commentary as primary evidence.""",
+}
+
+CATEGORY_QUERY_GUIDANCE = {
+    "scientific": """Scientific-source search guidance:
+- Make peer-reviewed and scholarly sources the backbone of the search.
+- Include targeted searches for arXiv/preprints, Google Scholar-indexed work, ACM Digital Library, IEEE Xplore, Springer, ScienceDirect/Elsevier, Wiley, Nature, PubMed/PMC, and official standards bodies when relevant.
+- Use search operators and source-focused terms such as: site:arxiv.org, site:dl.acm.org, site:ieeexplore.ieee.org, site:scholar.google.com, DOI, systematic review, meta-analysis, conference paper, journal article, randomized trial, cohort study, benchmark, dataset, reproducibility, limitations.
+- It is acceptable to include tangential queries for Medium posts, engineering blogs, or news only after scholarly queries; treat them as contextual only and use them only to capture implementation context or practitioner discussion.
+- Avoid broad consumer-web queries unless they help locate citations, DOI pages, or publisher records.""",
 }
 
 # ---------------------------------------------------------------------------
@@ -233,6 +255,11 @@ class DeepResearcher:
         self.evolving_report: str = ""
         self.research_plan: str = ""
 
+    def _category_query_guidance(self) -> str:
+        """Optional category-specific search guidance for planning/query prompts."""
+        guidance = CATEGORY_QUERY_GUIDANCE.get(getattr(self, "category", "") or "")
+        return f"\n\n{guidance}" if guidance else ""
+
     def cancel(self):
         """Request cooperative cancellation of the research loop."""
         self._cancelled = True
@@ -259,6 +286,11 @@ class DeepResearcher:
         findings: List[Dict] = list(prior_findings) if prior_findings else []
         report = prior_report or ""
 
+        if not self.category and not prior_report:
+            self.category = await self._classify_category(question)
+            if self.category:
+                logger.info(f"Auto-detected category: {self.category}")
+
         # PLAN: Analyze the question and create a research strategy
         if not prior_report:
             self._emit(phase="planning")
@@ -269,10 +301,6 @@ class DeepResearcher:
             self._emit(phase="planning")
             self.research_plan = await self._create_plan(question)
             logger.info(f"Continuation plan: {self.research_plan[:200]}")
-        if not self.category and not prior_report:
-            self.category = await self._classify_category(question)
-            if self.category:
-                logger.info(f"Auto-detected category: {self.category}")
 
         if prior_urls:
             self.urls_fetched.update(prior_urls)
@@ -389,7 +417,11 @@ class DeepResearcher:
     # ------------------------------------------------------------------
     async def _create_plan(self, question: str) -> str:
         """LLM analyzes the question and creates a research plan."""
-        prompt = current_date_context() + RESEARCH_PLAN_PROMPT.format(question=question)
+        prompt = (
+            current_date_context()
+            + RESEARCH_PLAN_PROMPT.format(question=question)
+            + self._category_query_guidance()
+        )
         try:
             response = await self._llm(
                 [{"role": "user", "content": prompt}],
@@ -471,7 +503,7 @@ class DeepResearcher:
             round_num=round_num,
             num_queries=num_queries,
             round_instruction=round_instruction,
-        )
+        ) + self._category_query_guidance()
 
         try:
             response = await self._llm(
@@ -548,6 +580,15 @@ class DeepResearcher:
             from src.search.providers import _get_search_settings
             from src.search.core import _call_provider, _build_provider_chain
 
+            direct_results: List[Dict] = []
+            if getattr(self, "category", "") == "scientific":
+                try:
+                    direct_results = await asyncio.to_thread(self._search_arxiv, query, 5)
+                    if direct_results and "arxiv" not in self.providers_used:
+                        self.providers_used.append("arxiv")
+                except Exception as e:
+                    logger.warning(f"Direct arXiv search failed: {e}")
+
             settings = _get_search_settings()
             provider = (self.search_provider_override or "").strip()
             if not provider:
@@ -569,11 +610,13 @@ class DeepResearcher:
                         logger.info(f"Research search: {prov} returned {len(results)} results")
                         if prov not in self.providers_used:
                             self.providers_used.append(prov)
-                        return results
+                        return self._merge_search_results(direct_results, results, limit=10)
                 except Exception as e:
                     raised = True
                     logger.warning(f"Research search: {prov} failed: {e}")
                     self._last_search_error = f"{prov}: {e}"
+            if direct_results:
+                return direct_results[:10]
             # Every provider ran but none returned results. If none of them
             # raised, record an actionable reason here — otherwise this empty
             # path leaves `_last_search_error` unset and the caller surfaces a
@@ -590,6 +633,76 @@ class DeepResearcher:
             logger.error(f"Search failed for '{query}': {e}")
             self._last_search_error = str(e)
             return []
+
+    @staticmethod
+    def _merge_search_results(*groups: List[Dict], limit: int = 10) -> List[Dict]:
+        merged: List[Dict] = []
+        seen: Set[str] = set()
+        for group in groups:
+            for result in group or []:
+                url = (result.get("url") or "").strip()
+                if not url or url in seen:
+                    continue
+                seen.add(url)
+                merged.append(result)
+                if len(merged) >= limit:
+                    return merged
+        return merged
+
+    @staticmethod
+    def _search_arxiv(query: str, count: int = 5) -> List[Dict]:
+        """Query arXiv directly for scientific research mode."""
+        import httpx
+        import xml.etree.ElementTree as ET
+
+        cleaned = re.sub(r"\bsite:\S+", " ", query, flags=re.IGNORECASE)
+        cleaned = re.sub(
+            r"\b(arxiv|google scholar|acm digital library|ieee xplore|springer|"
+            r"sciencedirect|elsevier|wiley|nature|pubmed|pmc)\b",
+            " ",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = " ".join(cleaned.split())[:300]
+        if not cleaned:
+            return []
+
+        params = {
+            "search_query": f"all:{cleaned}",
+            "start": 0,
+            "max_results": max(1, min(count, 10)),
+            "sortBy": "relevance",
+            "sortOrder": "descending",
+        }
+        response = httpx.get("https://export.arxiv.org/api/query", params=params, timeout=15)
+        response.raise_for_status()
+
+        root = ET.fromstring(response.text)
+        ns = {"atom": "http://www.w3.org/2005/Atom"}
+        results: List[Dict] = []
+        for entry in root.findall("atom:entry", ns):
+            title = " ".join((entry.findtext("atom:title", default="", namespaces=ns) or "").split())
+            summary = " ".join((entry.findtext("atom:summary", default="", namespaces=ns) or "").split())
+            published = (entry.findtext("atom:published", default="", namespaces=ns) or "")[:10]
+            url = ""
+            pdf_url = ""
+            for link in entry.findall("atom:link", ns):
+                href = link.attrib.get("href", "")
+                rel = link.attrib.get("rel", "")
+                title_attr = link.attrib.get("title", "")
+                if rel == "alternate" and href:
+                    url = href
+                if title_attr == "pdf" and href:
+                    pdf_url = href
+            if not url:
+                url = pdf_url
+            if not url:
+                continue
+            snippet = summary
+            if published:
+                snippet = f"arXiv preprint, published {published}. {snippet}"
+            results.append({"title": title or "arXiv result", "url": url, "snippet": snippet})
+        return results
 
     async def _fetch_and_extract(self, url: str, question: str,
                                  title: str) -> Optional[Dict]:

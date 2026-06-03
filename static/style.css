@@ -34384,6 +34384,7 @@ body.research-panel-view #research-divider { display:none; }
 .research-job-card[data-category="howto"]      { --cat-color: #82c882; }
 .research-job-card[data-category="landscape"]  { --cat-color: #a07ae0; }
 .research-job-card[data-category="factcheck"]  { --cat-color: var(--red); }
+.research-job-card[data-category="scientific"] { --cat-color: #4f9f9a; }
 .research-job-card.done[data-category] {
   background: color-mix(in srgb, var(--cat-color) 4%, transparent);
 }
@@ -34523,6 +34524,44 @@ body.research-panel-view #research-divider { display:none; }
   color: var(--red);
   padding: 1px 6px; border-radius: 4px;
   background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+
+/* Scientific: evidence-first tables and caveat blocks */
+.research-body-scientific table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  border: 1px solid color-mix(in srgb, #4f9f9a 25%, transparent);
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 0.92em;
+}
+.research-body-scientific th {
+  background: color-mix(in srgb, #4f9f9a 18%, transparent);
+  color: #4f9f9a;
+  font-weight: 700;
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 2px solid color-mix(in srgb, #4f9f9a 40%, transparent);
+}
+.research-body-scientific td {
+  padding: 8px 12px;
+  border-bottom: 1px solid color-mix(in srgb, #4f9f9a 12%, transparent);
+  vertical-align: top;
+}
+.research-body-scientific tr:nth-child(even) td {
+  background: color-mix(in srgb, #4f9f9a 3%, transparent);
+}
+.research-body-scientific blockquote {
+  border-left: 3px solid #4f9f9a;
+  background: color-mix(in srgb, #4f9f9a 7%, transparent);
+  padding: 10px 14px;
+  margin: 10px 0;
+  border-radius: 0 6px 6px 0;
+}
+.research-body-scientific h2,
+.research-body-scientific h3 {
+  scroll-margin-top: 18px;
 }
 
 .research-job-header {

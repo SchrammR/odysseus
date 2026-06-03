@@ -38,6 +38,7 @@ let _open = false;
 let _onDocKeydown = null;
 let _apiBase = '';
 let _endpoints = [];
+let _researchSettings = {};
 let _expandedJobId = null;
 let _markdownModule = null;
 let _sessionModule = null;
@@ -361,6 +362,7 @@ function _buildPanelHTML() {
           <button class="research-cat" data-cat="comparison">Compare</button>
           <button class="research-cat" data-cat="howto">How-to</button>
           <button class="research-cat" data-cat="factcheck">Fact-check</button>
+          <button class="research-cat" data-cat="scientific">Science</button>
         </div>
         <button id="research-settings-toggle" class="research-settings-toggle${chevronCls}">
           Settings<span class="research-settings-chevron">${_chevronIcon}</span>
@@ -612,14 +614,27 @@ function _restoreSavedSettings() {
         if (model) model.value = saved.model;
       }, 50);
     }
+  } else if (saved.model) {
+    const model = document.getElementById('research-model');
+    if (model && Array.from(model.options).some(o => o.value === saved.model)) {
+      model.value = saved.model;
+    }
   }
 }
 
 async function _loadEndpoints() {
   try {
-    const res = await fetch(`${_apiBase}/api/model-endpoints`, { credentials: 'same-origin' });
+    const [res, settingsRes] = await Promise.all([
+      fetch(`${_apiBase}/api/model-endpoints`, { credentials: 'same-origin' }),
+      fetch(`${_apiBase}/api/auth/settings`, { credentials: 'same-origin' }).catch(() => null),
+    ]);
     if (!res.ok) return;
     _endpoints = await res.json();
+    if (settingsRes && settingsRes.ok) {
+      _researchSettings = await settingsRes.json();
+    } else {
+      _researchSettings = {};
+    }
     const sel = document.getElementById('research-endpoint');
     if (!sel) return;
     _endpoints.filter(e => e.is_enabled && e.model_type === 'llm').forEach(ep => {
@@ -628,15 +643,53 @@ async function _loadEndpoints() {
       opt.textContent = ep.name || ep.base_url;
       sel.appendChild(opt);
     });
+    _populateModels(sel.value);
   } catch {}
+}
+
+const _NON_CHAT_MODEL = [
+  'text-embedding', 'embedding', 'tts-', 'whisper', 'dall-e',
+  'moderation', 'rerank', 'reranker', 'clip', 'stable-diffusion',
+];
+
+function _firstChatModel(models) {
+  const list = Array.isArray(models) ? models : [];
+  return list.find(m => !_NON_CHAT_MODEL.some(p => String(m).toLowerCase().includes(p))) || list[0] || '';
+}
+
+function _defaultResearchEndpoint() {
+  const settings = _researchSettings || {};
+  const llmEndpoints = _endpoints.filter(e => e.is_enabled && e.model_type === 'llm');
+  const chain = [
+    { id: settings.research_endpoint_id, model: settings.research_model },
+    { id: settings.utility_endpoint_id, model: settings.utility_model },
+    { id: settings.default_endpoint_id, model: settings.default_model },
+  ];
+  for (const item of chain) {
+    if (!item.id) continue;
+    const ep = llmEndpoints.find(e => e.id === item.id);
+    if (ep) return { ep, model: item.model || _firstChatModel(ep.models) };
+  }
+  const ep = llmEndpoints[0];
+  return ep ? { ep, model: _firstChatModel(ep.models) } : { ep: null, model: '' };
 }
 
 function _populateModels(endpointId) {
   const sel = document.getElementById('research-model');
   if (!sel) return;
-  sel.innerHTML = '<option value="">Default</option>';
-  if (!endpointId) return;
-  const ep = _endpoints.find(e => e.id === endpointId);
+  const previous = sel.value;
+  const resolved = endpointId
+    ? { ep: _endpoints.find(e => e.id === endpointId), model: '' }
+    : _defaultResearchEndpoint();
+  const defaultLabel = !endpointId && resolved.model
+    ? `Default (${resolved.model})`
+    : 'Default';
+  sel.innerHTML = '';
+  const blank = document.createElement('option');
+  blank.value = '';
+  blank.textContent = defaultLabel;
+  sel.appendChild(blank);
+  const ep = resolved.ep;
   if (!ep || !ep.models) return;
   sortModelIds(ep.models).forEach(m => {
     const opt = document.createElement('option');
@@ -644,6 +697,9 @@ function _populateModels(endpointId) {
     opt.textContent = m;
     sel.appendChild(opt);
   });
+  if (previous && Array.from(sel.options).some(o => o.value === previous)) {
+    sel.value = previous;
+  }
 }
 
 // ── Job rendering ──
@@ -1068,6 +1124,7 @@ const _CAT_ICONS = {
   howto:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
   landscape:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>',
   factcheck:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>',
+  scientific: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v6l-5 9a3 3 0 0 0 2.6 4.5h10.8A3 3 0 0 0 20 18l-5-9V3"/><path d="M8 3h8"/><path d="M7 15h10"/></svg>',
 };
 
 const _CAT_LABELS = {
@@ -1076,6 +1133,7 @@ const _CAT_LABELS = {
   howto: 'How-to Guide',
   landscape: 'Landscape',
   factcheck: 'Fact-check',
+  scientific: 'Scientific Research',
 };
 
 function _renderResult(job) {
